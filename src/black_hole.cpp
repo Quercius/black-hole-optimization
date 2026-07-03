@@ -26,7 +26,6 @@ int    framesCount   = 0;
 double c = 299792458.0;
 double G = 6.67430e-11;
 struct Ray;
-bool Gravity = false;
 
 struct Camera {
     // Center the camera orbit on the black hole at (0, 0, 0)
@@ -97,13 +96,6 @@ struct Camera {
                 panning = false;
             }
         }
-        if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-            if (action == GLFW_PRESS) {
-                Gravity = true;
-            } else if (action == GLFW_RELEASE) {
-                Gravity = false;
-            }
-        }
     }
     void processScroll(double xoffset, double yoffset) {
         radius -= yoffset * zoomSpeed;
@@ -111,10 +103,6 @@ struct Camera {
         update();
     }
     void processKey(int key, int scancode, int action, int mods) {
-        if (action == GLFW_PRESS && key == GLFW_KEY_G) {
-            Gravity = !Gravity;
-            cout << "[INFO] Gravity turned " << (Gravity ? "ON" : "OFF") << endl;
-        }
     }
 };
 Camera camera;
@@ -653,44 +641,6 @@ int main() {
         double now   = glfwGetTime();
         double dt    = now - lastTime;   // seconds since last frame
         lastTime     = now;
-
-        // Gravity
-        if (Gravity) {
-            for (auto& obj : objects) {
-                glm::dvec3 totalAccel(0.0); 
-                glm::dvec3 posObj = glm::dvec3(obj.posRadius.x, obj.posRadius.y, obj.posRadius.z);
-                for (const auto& obj2 : objects) {
-                    if (&obj == &obj2) continue; // skip self-interaction
-                    
-                    glm::dvec3 posObj2 = glm::dvec3(obj2.posRadius.x, obj2.posRadius.y, obj2.posRadius.z);
-                    glm::dvec3 diff = posObj2 - posObj;
-
-                    double distance = glm::length(diff);
-
-                    if (distance > 0.0) {
-                        glm::dvec3 direction = diff / distance;
-
-                        double Gforce = (G * obj.mass * obj2.mass) / (distance * distance);
-
-                        // F = G * m1 * m2 / r^2
-                        double accMag = (G * obj2.mass) / (distance * distance);
-                        
-                        totalAccel += direction * accMag;
-                    }
-                }
-
-                // Integration considering Delta Time
-                obj.velocity.x += totalAccel.x * dt;
-                obj.velocity.y += totalAccel.y * dt;
-                obj.velocity.z += totalAccel.z * dt;
-
-                obj.posRadius.x += obj.velocity.x * dt;
-                obj.posRadius.y += obj.velocity.y * dt;
-                obj.posRadius.z += obj.velocity.z * dt;
-            }
-        }
-
-
 
         // ---------- GRID ------------- //
         // 2) rebuild grid mesh on CPU
