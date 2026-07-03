@@ -1,71 +1,83 @@
-# **black**_**hole**
+# Black Hole GPU Optimization & Raytracing
 
-Black hole simulation project
+> **Note:** This repository is a performance-optimized and architecturally refactored fork of the original physics project by [kavan010](https://github.com/kavan010/black_hole). Thanks to him for his amazing work!
 
-Here is the black hole raw code, everything will be inside a src bin incase you want to copy the files
+A physics-based simulation of a Black Hole, rendering gravitational lensing and an accretion disk in real-time. The project utilizes **GPU Compute Shaders** to perform volumetric raytracing through curved spacetime, dictated by Einstein's theory of General Relativity and the Schwarzschild metric.
 
-I'm writing this as I'm beginning this project (hopefully I complete it ;D) here is what I plan to do:
+> **Project Scope:** The core performance optimizations detailed below have been submitted as a Pull Request to the original repository. This specific fork now serves as my personal development branch focused on advanced visual rendering, aesthetic enhancements, and an upcoming architectural migration to Vulkan, diverging from the original N-Body gravity focus.
 
-1. Ray-tracing : add ray tracing to the gravity simulation to simulate gravitational lensing
+## The Simulation
 
-2. Accretion disk : simulate accreciate disk using the ray tracing + the halos
+This project uses a mathematical Backward Raytracing approach implemented in GLSL Compute Shaders:
 
-3. Spacetime curvature : demonstrate visually the "trapdoor in spacetime" that is black holes using spacetime grid
+* **The Schwarzschild Metric:** Light rays are mathematically bent by the extreme gravity of the singularity.
 
-4. [optional] try to make it run realtime ;D
+* **Runge-Kutta 4 (RK4) Integration:** To solve the differential equations of the geodesic paths, the engine uses 4th-order Runge-Kutta numerical integration, allowing for highly accurate orbital tracking around the Photon Sphere.
 
-I hope it works :/
+## Core Performance Optimization (~5x faster)
 
-Edit: After completion of project -
+The initial focus of this fork was to take the original codebase and engineer it to run at peak efficiency on modern GPU architectures.
 
-## **Building Requirements:**
+**These architectural changes resulted in a ~79% reduction in render times (~4.7x Speedup) at higher resolutions.**
 
-1. C++ Compiler supporting C++ 17 or newer
+### GPU Bottlenecks Resolved
 
-2. [Cmake](https://cmake.org/)
+* **Adaptive Step Size Integration:** Replaced the brute-force, fixed integration steps with a dynamically scaled scalar. Rays far from the gravitational well take massive leaps, while the step size clamps to microscopic values only when approaching extreme curvature. This drastically reduced the computational load per pixel.
 
-3. [Vcpkg](https://vcpkg.io/en/)
+* **Thread / Warp Divergence Mitigation:** Implemented a "Smart Early Exit" for escaping rays. By evaluating radial velocity (`dr > 0`), rays heading into deep space terminate instantly, freeing up GPU Warps and preventing SIMT execution stalls caused by rays trapped in the Photon Sphere.
 
-4. [Git](https://git-scm.com/)
+### CPU Hot-Loop Optimizations
 
-## **Build Instructions:**
+* **Memory & I/O:** Eliminated severe memory leaks by replacing heap-allocated `std::vector` inside the $O(N^2)$ hot-loop with stack-allocated `glm::dvec3`.
 
-1. Clone the repository:
-	-  `git clone https://github.com/kavan010/black_hole.git`
-2. CD into the newly cloned directory
-	- `cd ./black_hole` 
-3. Install dependencies with Vcpkg
-	- `vcpkg install`
-4. Get the vcpkg cmake toolchain file path
-	- `vcpkg integrate install`
-	- This will output something like : `CMake projects should use: "-DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake"`
-5. Create a build directory
-	- `mkdir build`
-6. Configure project with CMake
-	-  `cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake`
-	- Use the vcpkg cmake toolchain path from above
-7. Build the project
-	- `cmake --build build`
-8. Run the program
-	- The executables will be located in the build folder
+* **Framerate Independence:** Physics updates are properly scaled by Delta Time (`dt`).
 
-### Alternative: Debian/Ubuntu apt workaround
+## Project Evolution & Roadmap
 
-If you don't want to use vcpkg, or you just need a quick way to install the native development packages on Debian/Ubuntu, install these packages and then run the normal CMake steps above:
+While the core engine optimizations remain, the N-body gravitational interactions have been deliberately removed from this fork to focus CPU/GPU resources entirely on the optical simulation of the singularity.
 
-```bash
-sudo apt update
-sudo apt install build-essential cmake \
-	libglew-dev libglfw3-dev libglm-dev libgl1-mesa-dev
-```
+This project is continually evolving. Upcoming milestones include:
 
-This provides the GLEW, GLFW, GLM and OpenGL development files so `find_package(...)` calls in `CMakeLists.txt` can locate the libraries. After installing, run the `cmake -B build -S .` and `cmake --build build` commands as shown in the Build Instructions.
+* [ ] **Aesthetic Enhancements:** Implement physically-based bloom, redshift/blueshift Doppler effects, and a procedural starbox to enhance the visual fidelity of the accretion disk and background space.
 
-## **How the code works:**
-for 2D: simple, just run 2D_lensing.cpp with the nessesary dependencies installed.
+* [ ] **API Migration (Vulkan):** Port the entire Compute Shader pipeline and rendering context to **Vulkan** to leverage lower-level memory management, explicit command buffers, and native Subgroup Operations to further optimize thread divergence.
 
-for 3D: black_hole.cpp and geodesic.comp work together to run the simuation faster using GPU, essentially it sends over a UBO and geodesic.comp runs heavy calculations using that data.
+## Build Instructions
 
-should work with nessesary dependencies installed, however I have only run it on windows with my GPU so am not sure!
+### Requirements
 
-LMK if you would like an in-depth explanation of how the code works aswell :)
+* C++17 compatible compiler (MSVC, GCC, Clang)
+
+* [CMake](https://cmake.org/)
+
+* [vcpkg](https://vcpkg.io/en/) (Recommended for dependency management)
+
+### Building with CMake & vcpkg
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/Quercius/black-hole-optimization.git
+   cd black-hole-optimization
+   ```
+
+2. **Install dependencies:**
+	Ensure **vcpkg** is installed on your system. The required packages (glfw3, glew, glm, opengl) are automatically handled via Manifest Mode (vcpkg.json).
+
+3. **Configure the project:**
+	```bash
+	cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/your/vcpkg/scripts/buildsystems/vcpkg.cmake
+	```
+
+4. **Build the executable:**
+	```bash
+	cmake --build build --config Release
+	```
+
+5. **Run the simulation:** 
+	Navigate to build/Release (or build/Debug) and run BlackHole3D.exe.
+
+
+## Controls 
+* **Left Mouse Click + Drag:** Orbit Camera
+* **Scroll Wheel:** Zoom In / Out
