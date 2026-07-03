@@ -1,3 +1,7 @@
+![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)
+![OpenGL 4.3](https://img.shields.io/badge/OpenGL-4.3-brightgreen.svg)
+![Physics](https://img.shields.io/badge/Physics-General__Relativity-purple.svg)
+
 # Black Hole GPU Optimization & Raytracing
 
 > **Note:** This repository is a performance-optimized and architecturally refactored fork of the original physics project by [kavan010](https://github.com/kavan010/black_hole). Thanks to him for his amazing work!
