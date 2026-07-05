@@ -103,6 +103,10 @@ struct Camera {
         update();
     }
     void processKey(int key, int scancode, int action, int mods) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+            // Per avere win serve passarlo come parametro, quindi nel setupCameraCallbacks:
+            // glfwSetWindowShouldClose(win, GLFW_TRUE);
+        }
     }
 };
 Camera camera;
@@ -123,6 +127,7 @@ struct BlackHole {
     }
 };
 BlackHole SagA(vec3(0.0f, 0.0f, 0.0f), 8.54e36); // Sagittarius A black hole
+
 struct ObjectData {
     vec4 posRadius; // xyz = position, w = radius
     vec4 color;     // rgb = color, a = unused
@@ -130,10 +135,9 @@ struct ObjectData {
     vec3 velocity = vec3(0.0f, 0.0f, 0.0f); // Initial velocity
 };
 vector<ObjectData> objects = {
-    { vec4(4e11f, 0.0f, 0.0f, 4e10f)   , vec4(1,1,0,1), 1.98892e30 },
-    { vec4(0.0f, 0.0f, 4e11f, 4e10f)   , vec4(1,0,0,1), 1.98892e30 },
-    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s) , vec4(0,0,0,1), static_cast<float>(SagA.mass)  },
-    //{ vec4(6e10f, 0.0f, 0.0f, 5e10f), vec4(0,1,0,1) }
+    { vec4(4e11f, 0.0f, 0.0f, 4e10f)   , vec4(1,1,0,1), 1.98892e30 }, // no velocity
+    { vec4(0.0f, 0.0f, 4e11f, 4e10f)   , vec4(1,0,0,1), 1.98892e30 }, // no velocity
+    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s) , vec4(0,0,0,1), static_cast<float>(SagA.mass)  }, // no velocity
 };
 
 struct Engine {
@@ -156,8 +160,8 @@ struct Engine {
 
     int WIDTH = 800;  // Window width
     int HEIGHT = 600; // Window height
-    int COMPUTE_WIDTH  = 200;   // Compute resolution width
-    int COMPUTE_HEIGHT = 150;  // Compute resolution height
+    int COMPUTE_WIDTH  = 400;   // Compute resolution width
+    int COMPUTE_HEIGHT = 300;  // Compute resolution height
     float width = 100000000000.0f; // Width of the viewport in meters
     float height = 75000000000.0f; // Height of the viewport in meters
     
@@ -451,8 +455,8 @@ struct Engine {
     }
     void dispatchCompute(const Camera& cam) {
         // determine target compute‐res
-        int cw = cam.moving ? COMPUTE_WIDTH  : 200;
-        int ch = cam.moving ? COMPUTE_HEIGHT : 150;
+        int cw = cam.moving ? COMPUTE_WIDTH  : 400;
+        int ch = cam.moving ? COMPUTE_HEIGHT : 300;
 
         // 1) reallocate the texture if needed
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -599,6 +603,7 @@ struct Engine {
     };
 };
 Engine engine;
+
 void setupCameraCallbacks(GLFWwindow* window) {
     glfwSetWindowUserPointer(window, &camera);
 
@@ -634,7 +639,11 @@ int main() {
 
     double lastTime = glfwGetTime();
     int   renderW  = 800, renderH = 600, numSteps = 80000;
+    
     while (!glfwWindowShouldClose(engine.window)) {
+        if (glfwGetKey(engine.window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(engine.window, true);
+
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // optional, but good practice
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
