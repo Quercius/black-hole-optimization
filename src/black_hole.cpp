@@ -321,7 +321,7 @@ struct Engine {
         glUniform1i(glGetUniformLocation(shaderProgram, "screenTexture"), 0);
 
         glDisable(GL_DEPTH_TEST);  // draw as background
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);  // 2 triangles
+        glDrawArrays(GL_TRIANGLES, 0, 6);  // 2 triangles
         glEnable(GL_DEPTH_TEST);
     }
     GLuint CreateShaderProgram(){
