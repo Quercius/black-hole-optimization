@@ -236,20 +236,27 @@ struct Engine {
                 for (const auto& obj : objects) {
                     vec3 objPos = vec3(obj.posRadius);
                     double mass = obj.mass;
-                    double radius = obj.posRadius.w;
 
                     double r_s = 2.0 * G * mass / (c * c);
                     double dx = worldX - objPos.x;
                     double dz = worldZ - objPos.z;
                     double dist = sqrt(dx * dx + dz * dz);
 
+                    float baseOffset = -3e10f; 
+
                     // prevent sqrt of negative or divide-by-zero (inside or at the black hole center)
                     if (dist > r_s) {
                         double deltaY = 2.0 * sqrt(r_s * (dist - r_s));
-                        y += static_cast<float>(deltaY) - 3e10f;
+                        y += static_cast<float>(deltaY) + baseOffset;
                     } else {
-                        // 🔴 For points inside or at r_s: make it dip down sharply
-                        y += 2.0f * static_cast<float>(sqrt(r_s * r_s)) - 3e10f;  // or add a deep pit
+                        // 🔴 For points inside or at r_s: make it dip down sharply                        
+                        float depth = 5e10f; // max depth under the black hole
+                        
+                        // Interpolazione quadratica: profonda al centro, si raccorda a 0 sul bordo
+                        float normalizedDist = static_cast<float>(dist / r_s); // dist/r_s goes from 0.0 (center) to 1.0 (border)
+                        float dip = depth * (normalizedDist - 1.0f);
+                        
+                        y += dip + baseOffset; 
                     }
                 }
 
@@ -639,7 +646,11 @@ int main() {
 
     double lastTime = glfwGetTime();
     int   renderW  = 800, renderH = 600, numSteps = 80000;
-    
+
+    // ---------- GRID ------------- //
+    // 2) build grid mesh on CPU (just one time, outside the while loop)
+    engine.generateGrid(objects);
+
     while (!glfwWindowShouldClose(engine.window)) {
         if (glfwGetKey(engine.window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(engine.window, true);
@@ -650,10 +661,7 @@ int main() {
         double now   = glfwGetTime();
         double dt    = now - lastTime;   // seconds since last frame
         lastTime     = now;
-
-        // ---------- GRID ------------- //
-        // 2) rebuild grid mesh on CPU
-        engine.generateGrid(objects);
+        
         // 5) overlay the bent grid
         mat4 view = lookAt(camera.position(), camera.target, vec3(0,1,0));
         mat4 proj = perspective(radians(60.0f), float(engine.COMPUTE_WIDTH)/engine.COMPUTE_HEIGHT, 1e9f, 1e14f);
