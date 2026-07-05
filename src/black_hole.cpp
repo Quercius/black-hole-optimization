@@ -132,12 +132,13 @@ struct ObjectData {
     vec4 posRadius; // xyz = position, w = radius
     vec4 color;     // rgb = color, a = unused
     float  mass;
-    vec3 velocity = vec3(0.0f, 0.0f, 0.0f); // Initial velocity
 };
 vector<ObjectData> objects = {
-    { vec4(4e11f, 0.0f, 0.0f, 4e10f)   , vec4(1,1,0,1), 1.98892e30 }, // no velocity
-    { vec4(0.0f, 0.0f, 4e11f, 4e10f)   , vec4(1,0,0,1), 1.98892e30 }, // no velocity
-    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s) , vec4(0,0,0,1), static_cast<float>(SagA.mass)  }, // no velocity
+    { vec4(4e11f, 0.0f, 0.0f, 2e10f)   , vec4(1,1,0,1), 1.98892e30 }, // yellow mid
+    { vec4(0.0f, 0.0f, 4e11f, 4e10f)   , vec4(1,0,0,1), 1.98892e30 }, // red mid
+    { vec4(-1.8e11f, 0.0f, -1.8e11f, 2.5e10f), vec4(0.2f, 0.6f, 1.0f, 1.0f), 0.5e30f }, // cyan near
+    { vec4(8e11f, 0.0f, 2e11f, 3e10f)  , vec4(0.1f, 1.0f, 0.5f, 1.0f), 5.0e30f }, // green far
+    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s) , vec4(0,0,0,1), static_cast<float>(SagA.mass)  },
 };
 
 struct Engine {
@@ -661,6 +662,28 @@ int main() {
         double now   = glfwGetTime();
         double dt    = now - lastTime;   // seconds since last frame
         lastTime     = now;
+
+        // make planets move based on their distance 
+        double timeScale = 1e2; 
+        double sim_dt = dt * timeScale;
+        
+        // last item is the black hole
+        for (size_t i = 0; i < objects.size() - 1; ++i) {
+            auto& p = objects[i];
+            
+            double r = sqrt(p.posRadius.x * p.posRadius.x + p.posRadius.z * p.posRadius.z);
+            
+            if (r > 0.0) {
+                double omega = sqrt((G * SagA.mass) / (r * r * r));
+                double currentAngle = atan2(p.posRadius.z, p.posRadius.x);
+                
+                double newAngle = currentAngle + (omega * sim_dt);
+                
+                p.posRadius.x = r * cos(newAngle);
+                p.posRadius.z = r * sin(newAngle);
+            }
+        }
+        engine.uploadObjectsUBO(objects); 
         
         // 5) overlay the bent grid
         mat4 view = lookAt(camera.position(), camera.target, vec3(0,1,0));
