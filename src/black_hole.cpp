@@ -547,9 +547,9 @@ struct Engine {
         // disk
         float r1 = SagA.r_s * 2.2f;    // inner radius just outside the event horizon
         float r2 = SagA.r_s * 5.2f;   // outer radius of the disk
-        float num = 2.0;               // number of rays
+        float time = glfwGetTime() * 1.5f;   // time variable for disk boiling effect
         float thickness = 1e9f;          // padding for std140 alignment
-        float diskData[4] = { r1, r2, num, thickness };
+        float diskData[4] = { r1, r2, time, thickness };
 
         glBindBuffer(GL_UNIFORM_BUFFER, diskUBO);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(diskData), diskData);

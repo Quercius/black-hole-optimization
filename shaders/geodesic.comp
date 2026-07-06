@@ -44,38 +44,11 @@ struct Ray {
     float E, L;
 };
 
-// ----------------------------------------------------
-// --- FUNZIONI DI RUMORE E GENERAZIONE PROCEDURALE ---
-// ----------------------------------------------------
-
 // 1. Hash di base (Super veloce)
 float hash31(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yzx + 33.33);
     return fract((p.x + p.y) * p.z);
-}
-
-// 2. Value Noise (Crea sfumature morbide tra i pixel per il gas)
-float noise(vec3 x) {
-    vec3 p = floor(x);
-    vec3 f = fract(x);
-    f = f * f * (3.0 - 2.0 * f); // Interpolazione morbida (Hermite)
-    float n = p.x + p.y * 57.0 + 113.0 * p.z;
-    return mix(
-        mix(mix(hash31(vec3(n)), hash31(vec3(n + 1.0)), f.x),
-            mix(hash31(vec3(n + 57.0)), hash31(vec3(n + 58.0)), f.x), f.y),
-        mix(mix(hash31(vec3(n + 113.0)), hash31(vec3(n + 114.0)), f.x),
-            mix(hash31(vec3(n + 170.0)), hash31(vec3(n + 171.0)), f.x), f.y), f.z);
-}
-
-// 3. FBM (Fractal Brownian Motion per le Nebulose)
-float fbm(vec3 p) {
-    float f = 0.0;
-    f += 0.5000 * noise(p); p = p * 2.02;
-    f += 0.2500 * noise(p); p = p * 2.03;
-    f += 0.1250 * noise(p); p = p * 2.01;
-    f += 0.0625 * noise(p);
-    return f;
 }
 
 // 4. Voronoi/Cellular Noise per le Stelle Giganti e rare
@@ -248,40 +221,22 @@ void main() {
         color = vec4(shaded, objectColor.a);
 
     } else {
-        // --- DEEP SPACE PROCEDURAL RENDERING ---
-        
-        // ATTENZIONE: USIAMO L'exitTrajectory GIA' CALCOLATA NEL CICLO!
-        // Non ricalcolarla qui, o otterrai NaN!
-        // Per evitare fluttuazioni e tremolii, convertiamo il vettore normalizzato
-        // in una proiezione stabile usando le normali del raggio
+        // --- SPAZIO PROFONDO (Leggerissimo, niente FBM) ---
         vec3 stableDir = normalize(exitTrajectory);
-
-        // 1. NEBULOSE (Gas colorati di background)
-        float nebVal1 = fbm(stableDir * 2.5);
-        float nebVal2 = fbm(stableDir * 3.5 + vec3(10.0));
         
-        vec3 nebulaColor = vec3(0.2, 0.05, 0.4) * smoothstep(0.4, 0.8, nebVal1);   // Viola profondo
-        nebulaColor += vec3(0.1, 0.3, 0.6) * smoothstep(0.45, 0.75, nebVal2);     // Azzurro
-        nebulaColor *= 1.8; 
-        
-        // 2. STELLE GIGANTI 
         vec3 giantStars = drawGiantStars(stableDir);
         
-        // 3. MICRO-STELLE
-        float galaxyMask = smoothstep(0.3, 0.7, nebVal1); 
+        // Micro stelle di background con densità uniforme
         float starVal = hash31(stableDir * 500.0);
         vec3 microStars = vec3(0.0);
-        
-        if (starVal > 0.99 && galaxyMask > 0.05) {
-            float intensity = (starVal - 0.99) / 0.01;
-            intensity = pow(intensity, 3.0) * galaxyMask;
-            microStars = vec3(1.0, 0.9, 0.8) * intensity * 1.5;
+        if (starVal > 0.985) {
+            float intensity = pow((starVal - 0.985) / 0.015, 3.0);
+            microStars = vec3(1.0, 0.9, 0.8) * intensity;
         }
 
-        // --- COMPOSITING ---
-        vec3 finalBg = nebulaColor + giantStars + microStars;
+        vec3 finalBg = giantStars + microStars;
         
-        // 4. RISOLVERE IL PROBLEMA DELLA GRIGLIA
+        // Alpha adattivo per la griglia
         float alpha = clamp(length(finalBg), 0.0, 1.0);
         
         color = vec4(finalBg, alpha);
