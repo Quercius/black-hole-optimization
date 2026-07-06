@@ -2,6 +2,7 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(binding = 0, rgba8) writeonly uniform image2D outImage;
+
 layout(std140, binding = 1) uniform Camera {
     vec3 camPos;     float _pad0;
     vec3 camRight;   float _pad1;
@@ -24,7 +25,7 @@ layout(std140, binding = 3) uniform Objects {
     int numObjects;
     vec4 objPosRadius[16];
     vec4 objColor[16];
-    float  mass[16]; 
+    float  mass[16];
 };
 
 const float SagA_rs = 1.269e10;
@@ -42,6 +43,65 @@ struct Ray {
     float dr, dtheta, dphi;
     float E, L;
 };
+
+// ----------------------------------------------------
+// --- FUNZIONI DI RUMORE E GENERAZIONE PROCEDURALE ---
+// ----------------------------------------------------
+
+// 1. Hash di base (Super veloce)
+float hash31(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+// 2. Value Noise (Crea sfumature morbide tra i pixel per il gas)
+float noise(vec3 x) {
+    vec3 p = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f); // Interpolazione morbida (Hermite)
+    float n = p.x + p.y * 57.0 + 113.0 * p.z;
+    return mix(
+        mix(mix(hash31(vec3(n)), hash31(vec3(n + 1.0)), f.x),
+            mix(hash31(vec3(n + 57.0)), hash31(vec3(n + 58.0)), f.x), f.y),
+        mix(mix(hash31(vec3(n + 113.0)), hash31(vec3(n + 114.0)), f.x),
+            mix(hash31(vec3(n + 170.0)), hash31(vec3(n + 171.0)), f.x), f.y), f.z);
+}
+
+// 3. FBM (Fractal Brownian Motion per le Nebulose)
+float fbm(vec3 p) {
+    float f = 0.0;
+    f += 0.5000 * noise(p); p = p * 2.02;
+    f += 0.2500 * noise(p); p = p * 2.03;
+    f += 0.1250 * noise(p); p = p * 2.01;
+    f += 0.0625 * noise(p);
+    return f;
+}
+
+// 4. Voronoi/Cellular Noise per le Stelle Giganti e rare
+vec3 drawGiantStars(vec3 dir) {
+    vec3 grid = dir * 25.0; // Dividiamo lo spazio in 25 megasettori
+    vec3 cell = floor(grid);
+    vec3 local = fract(grid);
+    
+    // Assegna una stella casuale per ogni settore
+    vec3 starPos = vec3(hash31(cell * 1.1), hash31(cell * 2.2), hash31(cell * 3.3));
+    // Riduciamo la posizione verso il centro del settore per evitare stelle tagliate a metà
+    starPos = 0.2 + 0.6 * starPos;
+    
+    float dist = length(local - starPos);
+    
+    // Disegna il "Core" (nucleo denso bianco) e "l'Halo" (alone sfumato)
+    float core = smoothstep(0.04, 0.01, dist);
+    float halo = 0.0015 / (dist * dist + 0.001); // Legge di decadimento fisico
+    
+    // Diamo colori casuali: alcune azzurre calde, altre arancio/giallo come nella tua foto
+    float cHash = hash31(cell * 5.5);
+    vec3 color = mix(vec3(0.5, 0.7, 1.0), vec3(1.0, 0.8, 0.5), cHash);
+    
+    return color * (core + halo) * 2.5; // Moltiplicatore di luminosità
+}
+
 Ray initRay(vec3 pos, vec3 dir) {
     Ray ray;
     ray.x = pos.x; ray.y = pos.y; ray.z = pos.z;
@@ -65,6 +125,7 @@ Ray initRay(vec3 pos, vec3 dir) {
 bool intercept(Ray ray, float rs) {
     return ray.r <= rs;
 }
+
 // Returns true on hit, captures center, radius, and base color
 bool interceptObject(Ray ray) {
     vec3 P = vec3(ray.x, ray.y, ray.z);
@@ -94,6 +155,7 @@ void geodesicRHS(Ray ray, out vec3 d1, out vec3 d2) {
     d2.y = -2.0*dr*dtheta/r + sin(theta)*cos(theta)*dphi*dphi;
     d2.z = -2.0*dr*dphi/r - 2.0*cos(theta)/(sin(theta)) * dtheta * dphi;
 }
+
 void rk4Step(inout Ray ray, float dL) {
     vec3 k1a, k1b;
     geodesicRHS(ray, k1a, k1b);
@@ -109,6 +171,7 @@ void rk4Step(inout Ray ray, float dL) {
     ray.y = ray.r * sin(ray.theta) * sin(ray.phi);
     ray.z = ray.r * cos(ray.theta);
 }
+
 bool crossesEquatorialPlane(vec3 oldPos, vec3 newPos) {
     bool crossed = (oldPos.y * newPos.y < 0.0);
     float r = length(vec2(newPos.x, newPos.z));
@@ -116,8 +179,8 @@ bool crossesEquatorialPlane(vec3 oldPos, vec3 newPos) {
 }
 
 void main() {
-    int WIDTH  = cam.moving ? 200 : 200;
-    int HEIGHT = cam.moving ? 150 : 150;
+    int WIDTH  = cam.moving ? 400 : 400;
+    int HEIGHT = cam.moving ? 300 : 300;
 
     ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
     if (pix.x >= WIDTH || pix.y >= HEIGHT) return;
@@ -135,29 +198,33 @@ void main() {
     bool hitDisk      = false;
     bool hitObject    = false;
 
-    int max_steps = 25000; 
+    int max_steps = 25000;
 
     vec3 prevPos = vec3(ray.x, ray.y, ray.z);
+
+    vec3 exitTrajectory = vec3(0.0);
 
     for (int i = 0; i < max_steps; ++i) {
         if (intercept(ray, SagA_rs)) { hitBlackHole = true; break; }
 
         // ---- ADAPTIVE STEP SIZE CALCULATION ----
-        float allowed_step = ray.r * 0.05; 
+        float allowed_step = ray.r * 0.05;
         float current_dL = clamp(allowed_step, MIN_STEP, MAX_STEP);
         // ----------------------------------------
-        
+
         rk4Step(ray, current_dL);
         lambda += current_dL;
 
         vec3 newPos = vec3(ray.x, ray.y, ray.z);
         if (crossesEquatorialPlane(prevPos, newPos)) { hitDisk = true; break; }
         if (interceptObject(ray)) { hitObject = true; break; }
+
+        exitTrajectory = normalize(newPos - prevPos);
         prevPos = newPos;
-        
+
         // ---- SMART EARLY EXIT ----
         if (ray.r > ESCAPE_R && ray.dr > 0.0) {
-            break; 
+            break;
         }
     }
 
@@ -181,7 +248,43 @@ void main() {
         color = vec4(shaded, objectColor.a);
 
     } else {
-        color = vec4(0.0);
+        // --- DEEP SPACE PROCEDURAL RENDERING ---
+        
+        // ATTENZIONE: USIAMO L'exitTrajectory GIA' CALCOLATA NEL CICLO!
+        // Non ricalcolarla qui, o otterrai NaN!
+        // Per evitare fluttuazioni e tremolii, convertiamo il vettore normalizzato
+        // in una proiezione stabile usando le normali del raggio
+        vec3 stableDir = normalize(exitTrajectory);
+
+        // 1. NEBULOSE (Gas colorati di background)
+        float nebVal1 = fbm(stableDir * 2.5);
+        float nebVal2 = fbm(stableDir * 3.5 + vec3(10.0));
+        
+        vec3 nebulaColor = vec3(0.2, 0.05, 0.4) * smoothstep(0.4, 0.8, nebVal1);   // Viola profondo
+        nebulaColor += vec3(0.1, 0.3, 0.6) * smoothstep(0.45, 0.75, nebVal2);     // Azzurro
+        nebulaColor *= 1.8; 
+        
+        // 2. STELLE GIGANTI 
+        vec3 giantStars = drawGiantStars(stableDir);
+        
+        // 3. MICRO-STELLE
+        float galaxyMask = smoothstep(0.3, 0.7, nebVal1); 
+        float starVal = hash31(stableDir * 500.0);
+        vec3 microStars = vec3(0.0);
+        
+        if (starVal > 0.99 && galaxyMask > 0.05) {
+            float intensity = (starVal - 0.99) / 0.01;
+            intensity = pow(intensity, 3.0) * galaxyMask;
+            microStars = vec3(1.0, 0.9, 0.8) * intensity * 1.5;
+        }
+
+        // --- COMPOSITING ---
+        vec3 finalBg = nebulaColor + giantStars + microStars;
+        
+        // 4. RISOLVERE IL PROBLEMA DELLA GRIGLIA
+        float alpha = clamp(length(finalBg), 0.0, 1.0);
+        
+        color = vec4(finalBg, alpha);
     }
 
     imageStore(outImage, pix, color);
