@@ -202,10 +202,49 @@ void main() {
     }
 
     if (hitDisk) {
-        double r = length(vec3(ray.x, ray.y, ray.z)) / disk_r2;
-        vec3 diskColor = vec3(1.0, r, 0.2);
-        color = vec4(diskColor, r);
+        // 1. Get the current absolute radial distance of the hit point
+        float current_r = float(length(vec3(ray.x, ray.y, ray.z)));
 
+        // 2. Normalize the radius between the inner (r1) and outer (r2) boundaries
+        float normalized_r = clamp((current_r - disk_r1) / (disk_r2 - disk_r1), 0.0, 1.0);
+
+        // 3. Invert the value so intensity is 1.0 (hot) at the center and 0.0 (cold/dark) outside
+        float intensity = 1.0 - normalized_r;
+
+        // 4. Define our color palette (approximating a blackbody temperature shift)
+        vec3 hotWhite = vec3(1.0, 1.0, 0.9);     // Incandescent inner ring
+        vec3 brightOrange = vec3(1.0, 0.4, 0.0); // Mid-disk accretion glow
+        vec3 darkRed = vec3(0.15, 0.0, 0.0);     // Cool, dark outer edge
+
+        // 5. Interpolate the colors based on the intensity of the current fragment
+        vec3 diskColor;
+
+        if (intensity > 0.95) {
+            // Closest to the black hole: Darken the color to simulate redshift / the plunging region
+            // Map the [0.95, 1.0] range to a clean [0.0, 1.0] factor
+            float factor = (intensity - 0.95) / 0.05; 
+            
+            // Define the dark inner edge color (a deeply red-shifted, dimmer hue)
+            vec3 innerDark = vec3(0.2, 0.05, 0.0); 
+            
+            // Interpolate from white-hot back down to dark
+            diskColor = mix(hotWhite, innerDark, factor);
+        }
+        else if (intensity > 0.5) {
+            // Middle section: Map from Orange to White-Hot
+            // (intensity - 0.5) / 0.45 ensures the factor reaches exactly 1.0 at intensity 0.95
+            float factor = (intensity - 0.5) / 0.45; 
+            diskColor = mix(brightOrange, hotWhite, factor);
+        } 
+        else {
+            // Outer section: Map from Dark Red to Orange
+            // Dividing by 0.5 is the same as multiplying by 2.0
+            float factor = intensity * 2.0;
+            diskColor = mix(darkRed, brightOrange, factor);
+        }
+
+        color = vec4(diskColor, 1.0);
+        
     } else if (hitBlackHole) {
         color = vec4(0.0, 0.0, 0.0, 1.0);
 
