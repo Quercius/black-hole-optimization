@@ -152,8 +152,8 @@ bool crossesEquatorialPlane(vec3 oldPos, vec3 newPos) {
 }
 
 void main() {
-    int WIDTH  = cam.moving ? 400 : 400;
-    int HEIGHT = cam.moving ? 300 : 300;
+    int WIDTH  = cam.moving ? 200 : 200;
+    int HEIGHT = cam.moving ? 150 : 300;
 
     ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
     if (pix.x >= WIDTH || pix.y >= HEIGHT) return;
@@ -279,6 +279,7 @@ void main() {
         float alpha = clamp(length(finalBg), 0.0, 1.0);
         
         color = vec4(finalBg, alpha);
+        //color = vec4(0.0);
     }
 
     imageStore(outImage, pix, color);

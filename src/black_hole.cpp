@@ -158,11 +158,15 @@ struct Engine {
     GLuint gridVBO = 0;
     GLuint gridEBO = 0;
     int gridIndexCount = 0;
+    // -- orbits vars -- //
+    GLuint orbitVAO = 0;
+    GLuint orbitVBO = 0;
+    int orbitVertexCount = 0;
 
     int WIDTH = 800;  // Window width
     int HEIGHT = 600; // Window height
-    int COMPUTE_WIDTH  = 400;   // Compute resolution width
-    int COMPUTE_HEIGHT = 300;  // Compute resolution height
+    int COMPUTE_WIDTH  = 200;   // Compute resolution width
+    int COMPUTE_HEIGHT = 150;  // Compute resolution height
     float width = 100000000000.0f; // Width of the viewport in meters
     float height = 75000000000.0f; // Height of the viewport in meters
     
@@ -312,6 +316,60 @@ struct Engine {
         glBindVertexArray(0);
         glEnable(GL_DEPTH_TEST);
     }
+    
+    void generateOrbits(const vector<ObjectData>& objects) {
+        vector<vec3> orbitVertices;
+        const int segments = 120; 
+
+        for (size_t i = 0; i < objects.size() - 1; ++i) {
+            // Orbit radius based on planet i position
+            double orbitRadius = sqrt(objects[i].posRadius.x * objects[i].posRadius.x + 
+                                      objects[i].posRadius.z * objects[i].posRadius.z);
+            float y = 0.0f;
+
+            // Use GL_LINES to build the orbit segments
+            for (int j = 0; j < segments; ++j) {
+                float angle1 = (static_cast<float>(j) / segments) * 2.0f * static_cast<float>(M_PI);
+                float angle2 = (static_cast<float>(j + 1) / segments) * 2.0f * static_cast<float>(M_PI);
+
+                orbitVertices.emplace_back(orbitRadius * cos(angle1), y, orbitRadius * sin(angle1));
+                orbitVertices.emplace_back(orbitRadius * cos(angle2), y, orbitRadius * sin(angle2));
+            }
+        }
+
+        // GPU upload
+        if (orbitVAO == 0) glGenVertexArrays(1, &orbitVAO);
+        if (orbitVBO == 0) glGenBuffers(1, &orbitVBO);
+
+        glBindVertexArray(orbitVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, orbitVBO);
+        glBufferData(GL_ARRAY_BUFFER, orbitVertices.size() * sizeof(vec3), orbitVertices.data(), GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0); // location = 0
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
+
+        orbitVertexCount = orbitVertices.size();
+        glBindVertexArray(0);
+    }
+    void drawOrbits(const mat4& viewProj) {
+        // Recycle grid program
+        glUseProgram(gridShaderProgram); 
+        glUniformMatrix4fv(glGetUniformLocation(gridShaderProgram, "viewProj"),
+                           1, GL_FALSE, glm::value_ptr(viewProj));
+        
+        glBindVertexArray(orbitVAO);
+
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Draw rings
+        glDrawArrays(GL_LINES, 0, orbitVertexCount);
+
+        glBindVertexArray(0);
+        glEnable(GL_DEPTH_TEST);
+    }
+
     void drawFullScreenQuad() {
         glUseProgram(shaderProgram); // fragment + vertex shader
         glBindVertexArray(quadVAO);
@@ -324,6 +382,7 @@ struct Engine {
         glDrawArrays(GL_TRIANGLES, 0, 6);  // 2 triangles
         glEnable(GL_DEPTH_TEST);
     }
+    
     GLuint CreateShaderProgram(){
         const char* vertexShaderSource = R"(
         #version 330 core
@@ -463,8 +522,8 @@ struct Engine {
     }
     void dispatchCompute(const Camera& cam) {
         // determine target compute‐res
-        int cw = cam.moving ? COMPUTE_WIDTH  : 400;
-        int ch = cam.moving ? COMPUTE_HEIGHT : 300;
+        int cw = cam.moving ? COMPUTE_WIDTH  : 200;
+        int ch = cam.moving ? COMPUTE_HEIGHT : 150;
 
         // 1) reallocate the texture if needed
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -648,9 +707,10 @@ int main() {
     double lastTime = glfwGetTime();
     int   renderW  = 800, renderH = 600, numSteps = 80000;
 
-    // ---------- GRID ------------- //
+    // ---------- GRID & ORBITS ------------- //
     // 2) build grid mesh on CPU (just one time, outside the while loop)
     engine.generateGrid(objects);
+    engine.generateOrbits(objects);
 
     while (!glfwWindowShouldClose(engine.window)) {
         if (glfwGetKey(engine.window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -690,6 +750,7 @@ int main() {
         mat4 proj = perspective(radians(60.0f), float(engine.COMPUTE_WIDTH)/engine.COMPUTE_HEIGHT, 1e9f, 1e14f);
         mat4 viewProj = proj * view;
         engine.drawGrid(viewProj);
+        engine.drawOrbits(viewProj);
 
         // ---------- RUN RAYTRACER ------------- //
         glViewport(0, 0, engine.WIDTH, engine.HEIGHT);
