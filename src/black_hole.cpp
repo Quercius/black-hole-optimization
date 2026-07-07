@@ -134,11 +134,20 @@ struct ObjectData {
     float  mass;
 };
 vector<ObjectData> objects = {
-    { vec4(4e11f, 0.0f, 0.0f, 2e10f)   , vec4(1,1,0,1), 1.98892e30 }, // yellow mid
-    { vec4(0.0f, 0.0f, 4e11f, 4e10f)   , vec4(1,0,0,1), 1.98892e30 }, // red mid
-    { vec4(-1.8e11f, 0.0f, -1.8e11f, 2.5e10f), vec4(0.2f, 0.6f, 1.0f, 1.0f), 0.5e30f }, // cyan near
-    { vec4(8e11f, 0.0f, 2e11f, 3e10f)  , vec4(0.1f, 1.0f, 0.5f, 1.0f), 5.0e30f }, // green far
-    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s) , vec4(0,0,0,1), static_cast<float>(SagA.mass)  },
+    // 0. the sun 
+    { vec4(6e11f, 0.0f, -2e11f, 5e10f), vec4(1.5f, 1.3f, 0.9f, 1.0f), 1.98892e30f },
+
+    // 1. yellow mid (I vecchi pianeti scalano di un indice)
+    //{ vec4(4e11f, 0.0f, 0.0f, 2e10f),   vec4(0.80f, 0.75f, 0.60f, 1.0f), 1.98892e30f }, 
+    // 2. red mid
+    { vec4(0.0f, 0.0f, 4e11f, 4e10f),   vec4(0.75f, 0.35f, 0.20f, 1.0f), 1.98892e30f }, 
+    // 3. cyan near
+    { vec4(-1.8e11f, 0.0f, -1.8e11f, 2.5e10f), vec4(0.3f, 0.6f, 0.8f, 1.0f), 0.5e30f }, 
+    // 4. green far
+    // { vec4(8e11f, 0.0f, 2e11f, 3e10f),  vec4(0.4f, 0.6f, 0.4f, 1.0f), 5.0e30f }, 
+    
+    // 5. BUCO NERO (Sempre in fondo)
+    { vec4(0.0f, 0.0f, 0.0f, SagA.r_s), vec4(0.0f, 0.0f, 0.0f, 1.0f), static_cast<float>(SagA.mass) }
 };
 
 struct Engine {
@@ -165,8 +174,8 @@ struct Engine {
 
     int WIDTH = 800;  // Window width
     int HEIGHT = 600; // Window height
-    int COMPUTE_WIDTH  = 200;   // Compute resolution width
-    int COMPUTE_HEIGHT = 150;  // Compute resolution height
+    int COMPUTE_WIDTH  = 400;   // Compute resolution width
+    int COMPUTE_HEIGHT = 300;  // Compute resolution height
     float width = 100000000000.0f; // Width of the viewport in meters
     float height = 75000000000.0f; // Height of the viewport in meters
     
@@ -522,8 +531,8 @@ struct Engine {
     }
     void dispatchCompute(const Camera& cam) {
         // determine target compute‐res
-        int cw = cam.moving ? COMPUTE_WIDTH  : 200;
-        int ch = cam.moving ? COMPUTE_HEIGHT : 150;
+        int cw = cam.moving ? COMPUTE_WIDTH  : 400;
+        int ch = cam.moving ? COMPUTE_HEIGHT : 300;
 
         // 1) reallocate the texture if needed
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -606,7 +615,7 @@ struct Engine {
         // disk
         float r1 = SagA.r_s * 2.2f;    // inner radius just outside the event horizon
         float r2 = SagA.r_s * 5.2f;   // outer radius of the disk
-        float time = glfwGetTime() * 1.5f;   // time variable for disk boiling effect
+        float time = glfwGetTime();   // time variable
         float thickness = 1e9f;          // padding for std140 alignment
         float diskData[4] = { r1, r2, time, thickness };
 
@@ -694,7 +703,6 @@ void setupCameraCallbacks(GLFWwindow* window) {
         cam->processKey(key, scancode, action, mods);
     });
 }
-
 
 // -- MAIN -- //
 int main() {
