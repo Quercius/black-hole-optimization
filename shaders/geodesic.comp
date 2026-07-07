@@ -213,6 +213,7 @@ void main() {
     }
 
     if (hitDisk) {
+        // --- DISK COLOR ---
         // 1. Get the current absolute radial distance of the hit point
         float current_r = float(length(vec3(ray.x, ray.y, ray.z)));
 
@@ -231,28 +232,58 @@ void main() {
         vec3 diskColor;
 
         if (intensity > 0.95) {
-            // Closest to the black hole: Darken the color to simulate redshift / the plunging region
-            // Map the [0.95, 1.0] range to a clean [0.0, 1.0] factor
             float factor = (intensity - 0.95) / 0.05; 
-            
-            // Define the dark inner edge color (a deeply red-shifted, dimmer hue)
             vec3 innerDark = vec3(0.2, 0.05, 0.0); 
-            
-            // Interpolate from white-hot back down to dark
             diskColor = mix(hotWhite, innerDark, factor);
         }
         else if (intensity > 0.5) {
-            // Middle section: Map from Orange to White-Hot
-            // (intensity - 0.5) / 0.45 ensures the factor reaches exactly 1.0 at intensity 0.95
             float factor = (intensity - 0.5) / 0.45; 
             diskColor = mix(brightOrange, hotWhite, factor);
         } 
         else {
-            // Outer section: Map from Dark Red to Orange
-            // Dividing by 0.5 is the same as multiplying by 2.0
             float factor = intensity * 2.0;
             diskColor = mix(darkRed, brightOrange, factor);
         }
+
+        // --- DISK TEXTURE ---
+        float angle = atan(ray.z, ray.x);
+        
+        // 1. Kepler Physics (inner gasses are super hot)
+        float physics_r = current_r / disk_r1; // [1; (disk_r2/disk_r1)]
+        float angularVelocity = 2.5 / pow(physics_r, 1.5); // Kepler Law
+        
+        // The angle is progressively sheared depending on the distance from the center
+        float shearedAngle = angle - time * angularVelocity;
+
+        // - integer lower ANGULAR freq (i.e. 3.0 or 5.0) means organic interrupt
+        // - higher RADIAL freq (i.e. 120.0) means thiner lines
+        float fil1 = sin(shearedAngle * 3.0 + normalized_r * 20.0); 
+        float fil2 = cos(shearedAngle * 5.0 + normalized_r * 60.0);
+        float fil3 = sin(shearedAngle * 9.0 + normalized_r * 10.0);
+
+        // Combinatorial weights for the gas noise calculation
+        float w1 = 1.0;
+        float w2 = 0.5;
+        float w3 = 0.25;
+        float totalWeight = w1 + w2 + w3;
+
+        // Sum the 3 fil and normalize to generate gas turbulence
+        float gasNoise = (fil1 * w1 + fil2 * w2 + fil3 * w3) / totalWeight;
+        float normalizedNoise = gasNoise * 0.5 + 0.5; // ~ [0, 1]
+
+        // 2. Overdrive & Clamp (with smoothstep)
+        float proximity = 1.0 - normalized_r; // [0; 1]
+        
+        // Flooding Curve to overpass the clamp limit value
+        float coreFlood = pow(proximity, 1.5) * 1.2; // [0; 1.2]
+        
+        // 1+2. overdrivenNoise = normalizedNoise [0; 1] + coreFlood [0; 1.2] depending on the distance
+        float overdrivenNoise = normalizedNoise + coreFlood; // [0; 2.2]
+
+        // Smoothstep (final clamp) cut-off every value higher than 0.6 giving back 1.0
+        float diskMod = mix(0.6, 1.8, smoothstep(0.1, 0.6, overdrivenNoise)); // 1.8 very bright
+
+        diskColor *= diskMod;
 
         color = vec4(diskColor, 1.0);
         
