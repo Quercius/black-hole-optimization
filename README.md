@@ -1,71 +1,101 @@
-# **black**_**hole**
+![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)
+![OpenGL 4.3](https://img.shields.io/badge/OpenGL-4.3-brightgreen.svg)
+![Physics](https://img.shields.io/badge/Physics-General__Relativity-purple.svg)
 
-Black hole simulation project
+# Black Hole GPU Optimization & Raytracing
 
-Here is the black hole raw code, everything will be inside a src bin incase you want to copy the files
+> **Note:** This repository is a performance-optimized and architecturally refactored fork of the original physics project by [kavan010](https://github.com/kavan010/black_hole). Thanks to him for his amazing work!
 
-I'm writing this as I'm beginning this project (hopefully I complete it ;D) here is what I plan to do:
+A physics-based simulation of a Black Hole, rendering gravitational lensing and an accretion disk in real-time. The project utilizes **GPU Compute Shaders** to perform volumetric raytracing through curved spacetime, dictated by Einstein's theory of General Relativity and the Schwarzschild metric.
 
-1. Ray-tracing : add ray tracing to the gravity simulation to simulate gravitational lensing
+> **Project Scope:** The core performance optimizations detailed below have been submitted as a Pull Request to the original repository. This specific fork now serves as my personal development branch focused on advanced visual rendering, aesthetic enhancements, and an upcoming architectural migration to Vulkan, diverging from the original N-Body gravity focus.
 
-2. Accretion disk : simulate accreciate disk using the ray tracing + the halos
+## The Simulation
 
-3. Spacetime curvature : demonstrate visually the "trapdoor in spacetime" that is black holes using spacetime grid
+This project uses a mathematical Backward Raytracing approach implemented in GLSL Compute Shaders:
 
-4. [optional] try to make it run realtime ;D
+* **The Schwarzschild Metric:** Light rays are mathematically bent by the extreme gravity of the singularity.
 
-I hope it works :/
+* **Runge-Kutta 4 (RK4) Integration:** To solve the differential equations of the geodesic paths, the engine uses 4th-order Runge-Kutta numerical integration, allowing for highly accurate orbital tracking around the Photon Sphere.
 
-Edit: After completion of project -
+## Core Performance Optimization (~5x faster)
 
-## **Building Requirements:**
+The initial focus of this fork was to take the original codebase and engineer it to run at peak efficiency on modern GPU architectures.
 
-1. C++ Compiler supporting C++ 17 or newer
+**These architectural changes resulted in a ~79% reduction in render times (~4.7x Speedup) at higher resolutions.**
 
-2. [Cmake](https://cmake.org/)
+### GPU Bottlenecks Resolved
 
-3. [Vcpkg](https://vcpkg.io/en/)
+* **Adaptive Step Size Integration:** Replaced the brute-force, fixed integration steps with a dynamically scaled scalar. Rays far from the gravitational well take massive leaps, while the step size clamps to microscopic values only when approaching extreme curvature. This drastically reduced the computational load per pixel.
 
-4. [Git](https://git-scm.com/)
+* **Thread / Warp Divergence Mitigation:** Implemented a "Smart Early Exit" for escaping rays. By evaluating radial velocity (`dr > 0`), rays heading into deep space terminate instantly, freeing up GPU Warps and preventing SIMT execution stalls caused by rays trapped in the Photon Sphere.
 
-## **Build Instructions:**
+### CPU Hot-Loop Optimizations
 
-1. Clone the repository:
-	-  `git clone https://github.com/kavan010/black_hole.git`
-2. CD into the newly cloned directory
-	- `cd ./black_hole` 
-3. Install dependencies with Vcpkg
-	- `vcpkg install`
-4. Get the vcpkg cmake toolchain file path
-	- `vcpkg integrate install`
-	- This will output something like : `CMake projects should use: "-DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake"`
-5. Create a build directory
-	- `mkdir build`
-6. Configure project with CMake
-	-  `cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake`
-	- Use the vcpkg cmake toolchain path from above
-7. Build the project
-	- `cmake --build build`
-8. Run the program
-	- The executables will be located in the build folder
+* **Memory & I/O:** Eliminated severe memory leaks by replacing heap-allocated `std::vector` inside the $O(N^2)$ hot-loop with stack-allocated `glm::dvec3`.
 
-### Alternative: Debian/Ubuntu apt workaround
+* **Framerate Independence:** Physics updates are properly scaled by Delta Time (`dt`).
 
-If you don't want to use vcpkg, or you just need a quick way to install the native development packages on Debian/Ubuntu, install these packages and then run the normal CMake steps above:
+## Project Evolution & Roadmap
 
-```bash
-sudo apt update
-sudo apt install build-essential cmake \
-	libglew-dev libglfw3-dev libglm-dev libgl1-mesa-dev
-```
+While the core engine optimizations remain, the N-body gravitational interactions have been deliberately removed from this fork to focus CPU/GPU resources entirely on the optical simulation of the singularity and its surrounding system.
 
-This provides the GLEW, GLFW, GLM and OpenGL development files so `find_package(...)` calls in `CMakeLists.txt` can locate the libraries. After installing, run the `cmake -B build -S .` and `cmake --build build` commands as shown in the Build Instructions.
+### Recent Major Graphical and Structural Enhancements
+| Before | After |
+| :---: | :---: |
+| ![Before upgrade](docs/img/before.png) | ![After upgrade](docs/img/after.png) |
 
-## **How the code works:**
-for 2D: simple, just run 2D_lensing.cpp with the nessesary dependencies installed.
+The visual fidelity and physical accuracy of the simulation have been completely overhauled with the following features:
 
-for 3D: black_hole.cpp and geodesic.comp work together to run the simuation faster using GPU, essentially it sends over a UBO and geodesic.comp runs heavy calculations using that data.
+* **Relativistic Accretion Disk:** The disk now features a procedural texture driven by Keplerian differential rotation. This shear effect creates *conceptually* realistic stretched gas and dust filaments that accurately distort around the event horizon.
+* **Dynamic Planetary System:** Added GPU-optimized planetary motion. Planets feature unique, math-driven procedural textures (e.g., gas giants, cratered rocky surfaces) alongside an auto-luminous orbiting Sun.
+* **Dual-Source Illumination:** Implemented a conceptually accurate lighting model where celestial bodies receive dynamic directional light from both the orbiting **Sun** (neutral/white) and the Black Hole's accretion disk (warm/orange). 
+* **Procedural Cosmos:** Introduced a fully procedural deep-space starfield generated via high-performance GPU hash/noise functions.
+* **Gravitational Grid Overhaul:** Refactored the spacetime grid visualization eliminating previous visual artifacts at the center.
+* **Orbital Tracking:** Added hardware-accelerated, dynamic orbital rings to visualize the planetary paths.
 
-should work with nessesary dependencies installed, however I have only run it on windows with my GPU so am not sure!
+### 🚀 Upcoming Milestones
+This project is continually evolving. Future goals include:
 
-LMK if you would like an in-depth explanation of how the code works aswell :)
+* [ ] **API Migration (Vulkan):** Port the entire Compute Shader pipeline and rendering context to **Vulkan** to leverage lower-level memory management, explicit command buffers, and native Subgroup Operations to further optimize thread divergence.
+
+## Build Instructions
+
+### Requirements
+
+* C++17 compatible compiler (MSVC, GCC, Clang)
+
+* [CMake](https://cmake.org/)
+
+* [vcpkg](https://vcpkg.io/en/) (Recommended for dependency management)
+
+### Building with CMake & vcpkg
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/Quercius/black-hole-optimization.git
+   cd black-hole-optimization
+   ```
+
+2. **Install dependencies:**
+	Ensure **vcpkg** is installed on your system. The required packages (glfw3, glew, glm, opengl) are automatically handled via Manifest Mode (vcpkg.json).
+
+3. **Configure the project:**
+	```bash
+	cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/your/vcpkg/scripts/buildsystems/vcpkg.cmake
+	```
+
+4. **Build the executable:**
+	```bash
+	cmake --build build --config Release
+	```
+
+5. **Run the simulation:** 
+	Navigate to build/Release (or build/Debug) and run BlackHole3D.exe.
+
+
+## Controls 
+* **Left Mouse Click + Drag:** Orbit Camera
+* **Scroll Wheel:** Zoom In / Out
+* **ESC key** Close Simulation

@@ -1,0 +1,404 @@
+#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) writeonly uniform image2D outImage;
+
+layout(std140, binding = 1) uniform Camera {
+    vec3 camPos;     float _pad0;
+    vec3 camRight;   float _pad1;
+    vec3 camUp;      float _pad2;
+    vec3 camForward; float _pad3;
+    float tanHalfFov;
+    float aspect;
+    bool moving;
+    int   _pad4;
+} cam;
+
+layout(std140, binding = 2) uniform Disk {
+    float disk_r1;
+    float disk_r2;
+    float time;
+    float thickness;
+};
+
+layout(std140, binding = 3) uniform Objects {
+    int numObjects;
+    vec4 objPosRadius[16];
+    vec4 objColor[16];
+    float  mass[16];
+};
+
+const float SagA_rs = 1.269e10;
+const double ESCAPE_R = 1e12; // Reduced due to limitness of the simulation space
+// --- Adaptive Step Parameters ---
+const float MIN_STEP = 1e6;
+const float MAX_STEP = 1e8;
+// Globals to store hit info
+vec4 objectColor = vec4(0.0);
+int hitObjectIndex = -1; 
+vec3 hitCenter = vec3(0.0);
+float hitRadius = 0.0;
+
+struct Ray {
+    float x, y, z, r, theta, phi;
+    float dr, dtheta, dphi;
+    float E, L;
+};
+
+// 1. Hash di base (Super veloce)
+float hash31(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+// 4. Voronoi/Cellular Noise per le Stelle Giganti e rare
+vec3 drawGiantStars(vec3 dir) {
+    vec3 grid = dir * 25.0; // Dividiamo lo spazio in 25 megasettori
+    vec3 cell = floor(grid);
+    vec3 local = fract(grid);
+    
+    // Assegna una stella casuale per ogni settore
+    vec3 starPos = vec3(hash31(cell * 1.1), hash31(cell * 2.2), hash31(cell * 3.3));
+    // Riduciamo la posizione verso il centro del settore per evitare stelle tagliate a metà
+    starPos = 0.2 + 0.6 * starPos;
+    
+    float dist = length(local - starPos);
+    
+    // Disegna il "Core" (nucleo denso bianco) e "l'Halo" (alone sfumato)
+    float core = smoothstep(0.04, 0.01, dist);
+    float halo = 0.0015 / (dist * dist + 0.001); // Legge di decadimento fisico
+    
+    // Diamo colori casuali: alcune azzurre calde, altre arancio/giallo come nella tua foto
+    float cHash = hash31(cell * 5.5);
+    vec3 color = mix(vec3(0.5, 0.7, 1.0), vec3(1.0, 0.8, 0.5), cHash);
+    
+    return color * (core + halo) * 2.5; // Moltiplicatore di luminosità
+}
+
+Ray initRay(vec3 pos, vec3 dir) {
+    Ray ray;
+    ray.x = pos.x; ray.y = pos.y; ray.z = pos.z;
+    ray.r = length(pos);
+    ray.theta = acos(pos.z / ray.r);
+    ray.phi = atan(pos.y, pos.x);
+
+    float dx = dir.x, dy = dir.y, dz = dir.z;
+    ray.dr     = sin(ray.theta)*cos(ray.phi)*dx + sin(ray.theta)*sin(ray.phi)*dy + cos(ray.theta)*dz;
+    ray.dtheta = (cos(ray.theta)*cos(ray.phi)*dx + cos(ray.theta)*sin(ray.phi)*dy - sin(ray.theta)*dz) / ray.r;
+    ray.dphi   = (-sin(ray.phi)*dx + cos(ray.phi)*dy) / (ray.r * sin(ray.theta));
+
+    ray.L = ray.r * ray.r * sin(ray.theta) * ray.dphi;
+    float f = 1.0 - SagA_rs / ray.r;
+    float dt_dL = sqrt((ray.dr*ray.dr)/f + ray.r*ray.r*(ray.dtheta*ray.dtheta + sin(ray.theta)*sin(ray.theta)*ray.dphi*ray.dphi));
+    ray.E = f * dt_dL;
+
+    return ray;
+}
+
+bool intercept(Ray ray, float rs) {
+    return ray.r <= rs;
+}
+
+// Returns true on hit, captures center, radius, and base color 
+// Avoid last item (black hole)
+bool interceptObject(Ray ray) {
+    vec3 P = vec3(ray.x, ray.y, ray.z);
+    for (int i = 0; i < numObjects - 1; ++i) { 
+        vec3 center = objPosRadius[i].xyz;
+        float radius = objPosRadius[i].w;
+        if (distance(P, center) <= radius) {
+            objectColor = objColor[i];
+            hitCenter = center;
+            hitRadius = radius;
+            hitObjectIndex = i; 
+            return true;
+        }
+    }
+    return false;
+}
+
+void geodesicRHS(Ray ray, out vec3 d1, out vec3 d2) {
+    float r = ray.r, theta = ray.theta;
+    float dr = ray.dr, dtheta = ray.dtheta, dphi = ray.dphi;
+    float f = 1.0 - SagA_rs / r;
+    float dt_dL = ray.E / f;
+
+    d1 = vec3(dr, dtheta, dphi);
+    d2.x = - (SagA_rs / (2.0 * r*r)) * f * dt_dL * dt_dL
+         + (SagA_rs / (2.0 * r*r * f)) * dr * dr
+         + r * (dtheta*dtheta + sin(theta)*sin(theta)*dphi*dphi);
+    d2.y = -2.0*dr*dtheta/r + sin(theta)*cos(theta)*dphi*dphi;
+    d2.z = -2.0*dr*dphi/r - 2.0*cos(theta)/(sin(theta)) * dtheta * dphi;
+}
+
+void rk4Step(inout Ray ray, float dL) {
+    vec3 k1a, k1b;
+    geodesicRHS(ray, k1a, k1b);
+
+    ray.r      += dL * k1a.x;
+    ray.theta  += dL * k1a.y;
+    ray.phi    += dL * k1a.z;
+    ray.dr     += dL * k1b.x;
+    ray.dtheta += dL * k1b.y;
+    ray.dphi   += dL * k1b.z;
+
+    ray.x = ray.r * sin(ray.theta) * cos(ray.phi);
+    ray.y = ray.r * sin(ray.theta) * sin(ray.phi);
+    ray.z = ray.r * cos(ray.theta);
+}
+
+bool crossesEquatorialPlane(vec3 oldPos, vec3 newPos) {
+    bool crossed = (oldPos.y * newPos.y < 0.0);
+    float r = length(vec2(newPos.x, newPos.z));
+    return crossed && (r >= disk_r1 && r <= disk_r2);
+}
+
+void main() {
+    int WIDTH  = cam.moving ? 400 : 400;
+    int HEIGHT = cam.moving ? 300 : 300;
+
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (pix.x >= WIDTH || pix.y >= HEIGHT) return;
+
+    // Init Ray
+    float u = (2.0 * (pix.x + 0.5) / WIDTH - 1.0) * cam.aspect * cam.tanHalfFov;
+    float v = (1.0 - 2.0 * (pix.y + 0.5) / HEIGHT) * cam.tanHalfFov;
+    vec3 dir = normalize(u * cam.camRight - v * cam.camUp + cam.camForward);
+    Ray ray = initRay(cam.camPos, dir);
+
+    vec4 color = vec4(0.0);
+    float lambda = 0.0;
+
+    bool hitBlackHole = false;
+    bool hitDisk      = false;
+    bool hitObject    = false;
+
+    int max_steps = 25000;
+
+    vec3 prevPos = vec3(ray.x, ray.y, ray.z);
+
+    vec3 exitTrajectory = vec3(0.0);
+
+    // Sun glow vars
+    float minSunDist = 1e30;
+    vec3 sunCenter = objPosRadius[0].xyz;
+    float sunRadius = objPosRadius[0].w;
+
+    for (int i = 0; i < max_steps; ++i) {
+        if (intercept(ray, SagA_rs)) { hitBlackHole = true; break; }
+
+        // ---- ADAPTIVE STEP SIZE CALCULATION ----
+        float allowed_step = ray.r * 0.05;
+        float current_dL = clamp(allowed_step, MIN_STEP, MAX_STEP);
+        // ----------------------------------------
+
+        rk4Step(ray, current_dL);
+        lambda += current_dL;
+
+        vec3 newPos = vec3(ray.x, ray.y, ray.z);
+        // How close to the sun the ray actually is
+        minSunDist = min(minSunDist, distance(newPos, sunCenter));
+
+        if (crossesEquatorialPlane(prevPos, newPos)) { hitDisk = true; break; }
+        if (interceptObject(ray)) { hitObject = true; break; }
+
+        exitTrajectory = normalize(newPos - prevPos);
+        prevPos = newPos;
+
+        // ---- SMART EARLY EXIT ----
+        if (ray.r > ESCAPE_R && ray.dr > 0.0) {
+            break;
+        }
+    }
+
+    if (hitDisk) {
+        // --- DISK COLOR ---
+        // 1. Get the current absolute radial distance of the hit point
+        float current_r = float(length(vec3(ray.x, ray.y, ray.z)));
+
+        // 2. Normalize the radius between the inner (r1) and outer (r2) boundaries
+        float normalized_r = clamp((current_r - disk_r1) / (disk_r2 - disk_r1), 0.0, 1.0);
+
+        // 3. Invert the value so intensity is 1.0 (hot) at the center and 0.0 (cold/dark) outside
+        float intensity = 1.0 - normalized_r;
+
+        // 4. Define our color palette (approximating a blackbody temperature shift)
+        vec3 hotWhite = vec3(1.0, 1.0, 0.9);     // Incandescent inner ring
+        vec3 brightOrange = vec3(1.0, 0.4, 0.0); // Mid-disk accretion glow
+        vec3 darkRed = vec3(0.15, 0.0, 0.0);     // Cool, dark outer edge
+
+        // 5. Interpolate the colors based on the intensity of the current fragment
+        vec3 diskColor;
+
+        if (intensity > 0.95) {
+            float factor = (intensity - 0.95) / 0.05; 
+            vec3 innerDark = vec3(0.2, 0.05, 0.0); 
+            diskColor = mix(hotWhite, innerDark, factor);
+        }
+        else if (intensity > 0.5) {
+            float factor = (intensity - 0.5) / 0.45; 
+            diskColor = mix(brightOrange, hotWhite, factor);
+        } 
+        else {
+            float factor = intensity * 2.0;
+            diskColor = mix(darkRed, brightOrange, factor);
+        }
+
+        // --- DISK TEXTURE ---
+        float angle = atan(ray.z, ray.x);
+        
+        // 1. Kepler Physics (inner gasses are super hot)
+        float physics_r = current_r / disk_r1; // [1; (disk_r2/disk_r1)]
+        float angularVelocity = 2.5 / pow(physics_r, 1.5); // Kepler Law
+        
+        // The angle is progressively sheared depending on the distance from the center
+        float shearedAngle = angle - time * angularVelocity;
+
+        // - integer lower ANGULAR freq (i.e. 3.0 or 5.0) means organic interrupt
+        // - higher RADIAL freq (i.e. 120.0) means thiner lines
+        float fil1 = sin(shearedAngle * 3.0 + normalized_r * 20.0); 
+        float fil2 = cos(shearedAngle * 5.0 + normalized_r * 60.0);
+        float fil3 = sin(shearedAngle * 9.0 + normalized_r * 10.0);
+
+        // Combinatorial weights for the gas noise calculation
+        float w1 = 1.0;
+        float w2 = 0.5;
+        float w3 = 0.25;
+        float totalWeight = w1 + w2 + w3;
+
+        // Sum the 3 fil and normalize to generate gas turbulence
+        float gasNoise = (fil1 * w1 + fil2 * w2 + fil3 * w3) / totalWeight;
+        float normalizedNoise = gasNoise * 0.5 + 0.5; // ~ [0, 1]
+
+        // 2. Overdrive & Clamp (with smoothstep)
+        float proximity = 1.0 - normalized_r; // [0; 1]
+        
+        // Flooding Curve to overpass the clamp limit value
+        float coreFlood = pow(proximity, 1.5) * 1.2; // [0; 1.2]
+        
+        // 1+2. overdrivenNoise = normalizedNoise [0; 1] + coreFlood [0; 1.2] depending on the distance
+        float overdrivenNoise = normalizedNoise + coreFlood; // [0; 2.2]
+
+        // Smoothstep (final clamp) cut-off every value higher than 0.6 giving back 1.0
+        float diskMod = mix(0.6, 1.8, smoothstep(0.1, 0.6, overdrivenNoise)); // 1.8 very bright
+
+        diskColor *= diskMod;
+
+        color = vec4(diskColor, 1.0);
+        
+    } else if (hitBlackHole) {
+        color = vec4(0.0, 0.0, 0.0, 1.0);
+
+    } else if (hitObject) {
+        vec3 P = vec3(ray.x, ray.y, ray.z);
+        vec3 N = normalize(P - hitCenter);
+        
+        vec3 surfaceP = hitCenter + N * hitRadius;
+        vec3 localP = (surfaceP - hitCenter) / hitRadius;
+        
+        if (hitObjectIndex == 0) {
+            // --- SUN ---
+            float sunBoil = sin(localP.x * 12.0 + time) * cos(localP.y * 12.0 - time * 0.8) * sin(localP.z * 12.0);
+            float sunTexture = mix(0.85, 1.25, sunBoil * 0.5 + 0.5);
+            
+            vec3 finalSunColor = objectColor.rgb * sunTexture * 2.5;
+            
+            color = vec4(finalSunColor, objectColor.a);
+
+        } else {
+            // --- PLANETS ---
+            vec3 baseColor = objectColor.rgb;
+            float colorMod = 1.0; 
+
+            int planetType = hitObjectIndex % 3; // Changes based on number of effects
+            
+            if (planetType == 1) {
+                // --- Gassy Giant ---
+                float stripe = sin(localP.y * 22.0) + sin(localP.y * 12.0) + sin(localP.y * 6.0) + sin(localP.x * 3.0);
+                colorMod = mix(0.6, 1.1, stripe * 0.5 + 0.5);
+                
+            } else if (planetType == 2) {
+                // --- Rocky Planet ---
+                float grain = hash31(localP * 60.0);
+                float macro = sin(localP.x * 5.0) * cos(localP.y * 6.0 + localP.z * 4.0);
+                
+                vec3 warp = vec3(
+                    sin(localP.y * 10.0 + localP.z * 5.0),
+                    sin(localP.z * 10.0 + localP.x * 5.0),
+                    sin(localP.x * 10.0 + localP.y * 5.0)
+                ) * 0.25; 
+                
+                float scaleNoise = sin(localP.x * 4.0 + localP.y * 3.0) * 0.5 + 0.5;
+                float freq = mix(1.2, 18.0, scaleNoise);
+                vec3 warpedP = (localP + warp) * freq;
+                
+                float c = sin(warpedP.x) * cos(warpedP.y) * sin(warpedP.z);
+                c = c * 0.5 + 0.5; 
+                
+                float craterRim = smoothstep(0.75, 0.85, c) - smoothstep(0.85, 0.92, c);
+                float craterHole = smoothstep(0.8, 0.95, c);
+                
+                float terreno = macro * 0.4 + grain * 0.2 + craterRim * 0.6 - craterHole * 0.45;
+                colorMod = mix(0.3, 1.2, clamp(terreno * 0.5 + 0.5, 0.0, 1.0));
+                
+            } else {
+                // --- Iced Marble Planet ---
+                float swirls = sin(12.0 * localP.x + 6.0 * sin(12.0 * localP.y + 12.0 * localP.z));
+                colorMod = mix(0.7, 1.2, swirls * 0.5 + 0.5);
+            }
+            
+            baseColor *= colorMod;
+
+            // --- Dual-Source Directional lighting ---
+            // BLACK HOLE
+            vec3 L_bh = normalize(vec3(0.0) - P); 
+            float diff_bh = max(dot(N, L_bh), 0.0);
+            // Warmer tone and softer
+            vec3 light_bh = vec3(1.0, 0.6, 0.2) * diff_bh * 0.5;
+            
+            // SUN
+            vec3 sunPos = objPosRadius[0].xyz;
+            vec3 L_sun = normalize(sunPos - P);
+            float diff_sun = max(dot(N, L_sun), 0.0);
+            // Dominant intensity
+            vec3 light_sun = vec3(1.0, 1.0, 0.95) * diff_sun * 1.5;
+
+            float ambient = 0.05;
+
+            vec3 finalLighting = baseColor * (ambient + light_bh + light_sun);
+
+            // --- FINAL COLOR ---
+            color = vec4(finalLighting, objectColor.a);
+        }
+    } else {
+        // --- OUTER SPACE ---
+        vec3 stableDir = normalize(exitTrajectory);
+        
+        vec3 giantStars = drawGiantStars(stableDir);
+        
+        float starVal = hash31(stableDir * 500.0);
+        vec3 microStars = vec3(0.0);
+        if (starVal > 0.985) {
+            float intensity = pow((starVal - 0.985) / 0.015, 3.0);
+            microStars = vec3(1.0, 0.9, 0.8) * intensity;
+        }
+
+        vec3 finalBg = giantStars + microStars;
+        
+        // --- SUN GLOW ---
+        float distFromSunSurface = minSunDist - sunRadius;
+        
+        if (distFromSunSurface > 0.0) {
+            float haloIntensity = pow(sunRadius / (sunRadius + distFromSunSurface * 0.85), 6.0);
+            vec3 haloColor = vec3(1.5, 1.1, 0.4);
+            
+            finalBg += haloColor * haloIntensity * 1.8; 
+        }
+
+        float alpha = clamp(length(finalBg), 0.0, 1.0);
+        color = vec4(finalBg, alpha);
+    }
+
+    imageStore(outImage, pix, color);
+}
