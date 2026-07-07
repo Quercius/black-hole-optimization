@@ -38,11 +38,24 @@ The initial focus of this fork was to take the original codebase and engineer it
 
 ## Project Evolution & Roadmap
 
-While the core engine optimizations remain, the N-body gravitational interactions have been deliberately removed from this fork to focus CPU/GPU resources entirely on the optical simulation of the singularity.
+While the core engine optimizations remain, the N-body gravitational interactions have been deliberately removed from this fork to focus CPU/GPU resources entirely on the optical simulation of the singularity and its surrounding system.
 
-This project is continually evolving. Upcoming milestones include:
+### Recent Major Graphical and Structural Enhancements
+| Before | After |
+| :---: | :---: |
+| ![Before upgrade](docs/img/before.png) | ![After upgrade](docs/img/after.png) |
 
-* [ ] **Aesthetic Enhancements:** Implement physically-based bloom, redshift/blueshift Doppler effects, and a procedural starbox to enhance the visual fidelity of the accretion disk and background space.
+The visual fidelity and physical accuracy of the simulation have been completely overhauled with the following features:
+
+* **Relativistic Accretion Disk:** The disk now features a procedural texture driven by Keplerian differential rotation. This shear effect creates *conceptually* realistic stretched gas and dust filaments that accurately distort around the event horizon.
+* **Dynamic Planetary System:** Added GPU-optimized planetary motion. Planets feature unique, math-driven procedural textures (e.g., gas giants, cratered rocky surfaces) alongside an auto-luminous orbiting Sun.
+* **Dual-Source Illumination:** Implemented a conceptually accurate lighting model where celestial bodies receive dynamic directional light from both the orbiting **Sun** (neutral/white) and the Black Hole's accretion disk (warm/orange). 
+* **Procedural Cosmos:** Introduced a fully procedural deep-space starfield generated via high-performance GPU hash/noise functions.
+* **Gravitational Grid Overhaul:** Refactored the spacetime grid visualization eliminating previous visual artifacts at the center.
+* **Orbital Tracking:** Added hardware-accelerated, dynamic orbital rings to visualize the planetary paths.
+
+### 🚀 Upcoming Milestones
+This project is continually evolving. Future goals include:
 
 * [ ] **API Migration (Vulkan):** Port the entire Compute Shader pipeline and rendering context to **Vulkan** to leverage lower-level memory management, explicit command buffers, and native Subgroup Operations to further optimize thread divergence.
 
@@ -85,3 +98,4 @@ This project is continually evolving. Upcoming milestones include:
 ## Controls 
 * **Left Mouse Click + Drag:** Orbit Camera
 * **Scroll Wheel:** Zoom In / Out
+* **ESC key** Close Simulation
