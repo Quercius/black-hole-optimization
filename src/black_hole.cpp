@@ -29,12 +29,13 @@ struct Ray;
 
 struct Camera {
     // Center the camera orbit on the black hole at (0, 0, 0)
-    vec3 target = vec3(0.0f, 0.0f, 0.0f); // Always look at the black hole center
-    float radius = 6.34194e10f;
+    vec3 target = vec3(0.0f, 0.0f, 0.0f); 
+    
+    // SOSTITUIRAI QUESTI VALORI CON QUELLI STAMPATI IN CONSOLE
     float minRadius = 1e10f, maxRadius = 1e12f;
-
-    float azimuth = 0.0f;
-    float elevation = M_PI / 2.0f;
+    float radius = 1.63419e+11f;
+    float azimuth = -0.03f;
+    float elevation = 1.4308f;
 
     float orbitSpeed = 0.01f;
     float panSpeed = 0.01f;
@@ -42,21 +43,19 @@ struct Camera {
 
     bool dragging = false;
     bool panning = false;
-    bool moving = false; // For compute shader optimization
+    bool moving = false; 
     double lastX = 0.0, lastY = 0.0;
 
-    // Calculate camera position in world space
     vec3 position() const {
         float clampedElevation = glm::clamp(elevation, 0.01f, float(M_PI) - 0.01f);
-        // Orbit around (0,0,0) always
         return vec3(
             radius * sin(clampedElevation) * cos(azimuth),
             radius * cos(clampedElevation),
             radius * sin(clampedElevation) * sin(azimuth)
         );
     }
+    
     void update() {
-        // Always keep target at black hole center
         target = vec3(0.0f, 0.0f, 0.0f);
         if(dragging | panning) {
             moving = true;
@@ -70,36 +69,55 @@ struct Camera {
         float dy = float(y - lastY);
 
         if (dragging && panning) {
-            // Pan: Shift + Left or Middle Mouse
-            // Disable panning to keep camera centered on black hole
+            // Pan disabilitato
         }
         else if (dragging && !panning) {
             // Orbit: Left mouse only
             azimuth   += dx * orbitSpeed;
             elevation -= dy * orbitSpeed;
             elevation = glm::clamp(elevation, 0.01f, float(M_PI) - 0.01f);
+            
+            // Stampa live mentre muovi il mouse (utile per capire come variano)
+            std::cout << "[Live] radius: " << radius << " | azimuth: " << azimuth << " | elevation: " << elevation << "\r" << std::flush;
         }
 
         lastX = x;
         lastY = y;
         update();
     }
+    
     void processMouseButton(int button, int action, int mods, GLFWwindow* win) {
         if (button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_MIDDLE) {
             if (action == GLFW_PRESS) {
                 dragging = true;
-                // Disable panning so camera always orbits center
                 panning = false;
                 glfwGetCursorPos(win, &lastX, &lastY);
             } else if (action == GLFW_RELEASE) {
+                // STAMPA IL BLOCCO PULITO DA COPIARE QUANDO RILASCI IL MOUSE
+                if (dragging) {
+                    std::cout << "\n\n/* --- COPIA QUESTI VALORI PER IL RENDER FINALE --- */\n"
+                              << "float radius = " << radius << "f;\n"
+                              << "float azimuth = " << azimuth << "f;\n"
+                              << "float elevation = " << elevation << "f;\n"
+                              << "/* ------------------------------------------------ */\n\n";
+                }
                 dragging = false;
                 panning = false;
             }
         }
     }
+    
     void processScroll(double xoffset, double yoffset) {
         radius -= yoffset * zoomSpeed;
         radius = glm::clamp(radius, minRadius, maxRadius);
+        
+        // Stampa il blocco pulito anche alla fine di ogni zoom
+        std::cout << "\n\n/* --- COPIA QUESTI VALORI PER IL RENDER FINALE --- */\n"
+                  << "float radius = " << radius << "f;\n"
+                  << "float azimuth = " << azimuth << "f;\n"
+                  << "float elevation = " << elevation << "f;\n"
+                  << "/* ------------------------------------------------ */\n\n";
+                  
         update();
     }
     void processKey(int key, int scancode, int action, int mods) {
@@ -134,19 +152,19 @@ struct ObjectData {
     float  mass;
 };
 vector<ObjectData> objects = {
-    // 0. the sun (S2 2020)
-    { vec4(6e11f, 0.0f, -2e11f, 5e10f), vec4(1.5f, 1.3f, 0.9f, 1.0f), 1.98892e30f },
+    // 0. ☀️ IL SOLE (Profondità estrema. Leggerissimamente a destra per un lens flare asimmetrico)
+    { vec4(-6.0e11f, 0.0f, -0.4e11f, 5e10f), vec4(1.5f, 1.3f, 0.9f, 1.0f), 1.98892e30f },
 
-    // 1. yellow mid (I vecchi pianeti scalano di un indice)
-    //{ vec4(4e11f, 0.0f, 0.0f, 2e10f),   vec4(0.80f, 0.75f, 0.60f, 1.0f), 1.98892e30f }, 
-    // 2. red mid
-    { vec4(0.0f, 0.0f, 4e11f, 4e10f),   vec4(0.75f, 0.35f, 0.20f, 1.0f), 1.98892e30f }, 
-    // 3. cyan near
-    { vec4(-1.8e11f, 0.0f, -1.8e11f, 2.5e10f), vec4(0.3f, 0.6f, 0.8f, 1.0f), 0.5e30f }, 
-    // 4. green far
-    // { vec4(8e11f, 0.0f, 2e11f, 3e10f),  vec4(0.4f, 0.6f, 0.4f, 1.0f), 5.0e30f }, 
+    // 1. 🪐 GIGANTE GASSOSO (Distanza originale mantenuta a 4e11. Inquadrato a DESTRA)
+    { vec4(-3.71e11f, 0.0f, -1.50e11f, 4e10f), vec4(0.75f, 0.35f, 0.20f, 1.0f), 1.98892e30f }, 
     
-    // 5. BUCO NERO (Sempre in fondo)
+    // 3. 🌍 PIANETA AZZURRO (Distanza originale mantenuta a 2.54e11. Inquadrato a SINISTRA)
+    { vec4(-1.98e11f, 0.0f, 1.60e11f, 2.5e10f), vec4(0.3f, 0.6f, 0.8f, 1.0f), 0.5e30f }, 
+    
+    // 2. 🌕 SATELLITE GIALLO (Agganciato al Gigante Gassoso: di fronte, spostato in alto e a sinistra)
+    { vec4(-3.41e11f, 0.15e11f, -1.10e11f, 9e9f), vec4(0.80f, 0.75f, 0.60f, 1.0f), 0.01e30f },
+
+    // 4. 🕳️ BUCO NERO (Sempre al centro)
     { vec4(0.0f, 0.0f, 0.0f, SagA.r_s), vec4(0.0f, 0.0f, 0.0f, 1.0f), static_cast<float>(SagA.mass) }
 };
 
@@ -174,8 +192,8 @@ struct Engine {
 
     int WIDTH = 800;  // Window width
     int HEIGHT = 600; // Window height
-    int COMPUTE_WIDTH  = 400;   // Compute resolution width
-    int COMPUTE_HEIGHT = 300;  // Compute resolution height
+    int COMPUTE_WIDTH  = 800;   // Compute resolution width
+    int COMPUTE_HEIGHT = 600;  // Compute resolution height
     float width = 100000000000.0f; // Width of the viewport in meters
     float height = 75000000000.0f; // Height of the viewport in meters
     
@@ -531,8 +549,8 @@ struct Engine {
     }
     void dispatchCompute(const Camera& cam) {
         // determine target compute‐res
-        int cw = cam.moving ? COMPUTE_WIDTH  : 400;
-        int ch = cam.moving ? COMPUTE_HEIGHT : 300;
+        int cw = cam.moving ? COMPUTE_WIDTH  : 800;
+        int ch = cam.moving ? COMPUTE_HEIGHT : 600;
 
         // 1) reallocate the texture if needed
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -736,21 +754,21 @@ int main() {
         double sim_dt = dt * timeScale;
         
         // last item is the black hole
-        for (size_t i = 0; i < objects.size() - 1; ++i) {
-            auto& p = objects[i];
+        // for (size_t i = 0; i < objects.size() - 1; ++i) {
+        //     auto& p = objects[i];
             
-            double r = sqrt(p.posRadius.x * p.posRadius.x + p.posRadius.z * p.posRadius.z);
+        //     double r = sqrt(p.posRadius.x * p.posRadius.x + p.posRadius.z * p.posRadius.z);
             
-            if (r > 0.0) {
-                double omega = sqrt((G * SagA.mass) / (r * r * r));
-                double currentAngle = atan2(p.posRadius.z, p.posRadius.x);
+        //     if (r > 0.0) {
+        //         double omega = sqrt((G * SagA.mass) / (r * r * r));
+        //         double currentAngle = atan2(p.posRadius.z, p.posRadius.x);
                 
-                double newAngle = currentAngle + (omega * sim_dt);
+        //         double newAngle = currentAngle + (omega * sim_dt);
                 
-                p.posRadius.x = r * cos(newAngle);
-                p.posRadius.z = r * sin(newAngle);
-            }
-        }
+        //         p.posRadius.x = r * cos(newAngle);
+        //         p.posRadius.z = r * sin(newAngle);
+        //     }
+        // }
         engine.uploadObjectsUBO(objects); 
         
         // 5) overlay the bent grid

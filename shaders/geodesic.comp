@@ -155,8 +155,8 @@ bool crossesEquatorialPlane(vec3 oldPos, vec3 newPos) {
 }
 
 void main() {
-    int WIDTH  = cam.moving ? 400 : 400;
-    int HEIGHT = cam.moving ? 300 : 300;
+    int WIDTH  = cam.moving ? 800 : 800;
+    int HEIGHT = cam.moving ? 600 : 600;
 
     ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
     if (pix.x >= WIDTH || pix.y >= HEIGHT) return;
@@ -355,7 +355,7 @@ void main() {
             vec3 L_bh = normalize(vec3(0.0) - P); 
             float diff_bh = max(dot(N, L_bh), 0.0);
             // Warmer tone and softer
-            vec3 light_bh = vec3(1.0, 0.6, 0.2) * diff_bh * 0.5;
+            vec3 light_bh = vec3(1.0, 0.6, 0.2) * diff_bh * 0.8;
             
             // SUN
             vec3 sunPos = objPosRadius[0].xyz;
