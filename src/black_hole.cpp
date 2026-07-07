@@ -134,7 +134,7 @@ struct ObjectData {
     float  mass;
 };
 vector<ObjectData> objects = {
-    // 0. the sun 
+    // 0. the sun (S2 2020)
     { vec4(6e11f, 0.0f, -2e11f, 5e10f), vec4(1.5f, 1.3f, 0.9f, 1.0f), 1.98892e30f },
 
     // 1. yellow mid (I vecchi pianeti scalano di un indice)

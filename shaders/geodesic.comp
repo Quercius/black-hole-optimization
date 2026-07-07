@@ -319,12 +319,26 @@ void main() {
             
             baseColor *= colorMod;
 
-            // Directional lighting
-            vec3 L = normalize(vec3(0.0) - P); 
-            float diff = max(dot(N, L), 0.0);
-            float ambient = 0.05; 
+            // --- Dual-Source Directional lighting ---
+            // BLACK HOLE
+            vec3 L_bh = normalize(vec3(0.0) - P); 
+            float diff_bh = max(dot(N, L_bh), 0.0);
+            // Warmer tone and softer
+            vec3 light_bh = vec3(1.0, 0.6, 0.2) * diff_bh * 0.5;
+            
+            // SUN
+            vec3 sunPos = objPosRadius[0].xyz;
+            vec3 L_sun = normalize(sunPos - P);
+            float diff_sun = max(dot(N, L_sun), 0.0);
+            // Dominant intensity
+            vec3 light_sun = vec3(1.0, 1.0, 0.95) * diff_sun * 1.5;
 
-            color = vec4(baseColor * (ambient + diff * 1.5), objectColor.a);
+            float ambient = 0.05;
+
+            vec3 finalLighting = baseColor * (ambient + light_bh + light_sun);
+
+            // --- FINAL COLOR ---
+            color = vec4(finalLighting, objectColor.a);
         }
     } else {
         // --- OUTER SPACE ---
