@@ -43,7 +43,7 @@ While the core engine optimizations remain, the N-body gravitational interaction
 ### Recent Major Graphical and Structural Enhancements
 | Before | After |
 | :---: | :---: |
-| ![Before upgrade](docs/img/before.png) | ![After upgrade](docs/img/after.png) |
+| <img width="786" height="592" alt="Image" src="https://github.com/user-attachments/assets/f28c6d24-a90e-48ec-b256-f2f5450c8efd" /> | <img width="795" height="592" alt="Image" src="https://github.com/user-attachments/assets/07459668-bffd-4b99-b5dd-be90b34a28a3" /> |
 
 The visual fidelity and physical accuracy of the simulation have been completely overhauled with the following features:
 
